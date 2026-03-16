@@ -1,114 +1,158 @@
 import { useEffect, useState } from 'react';
 import { supabase } from '../lib/supabase';
 import { useAuth } from '../contexts/AuthContext';
-import { LayoutDashboard, DollarSign, Users, Package } from 'lucide-react';
+import { 
+  LayoutDashboard, 
+  DollarSign, 
+  Users, 
+  Package, 
+  TrendingUp 
+} from 'lucide-react';
+import { 
+  BarChart, 
+  Bar, 
+  XAxis, 
+  YAxis, 
+  CartesianGrid, 
+  Tooltip, 
+  ResponsiveContainer,
+  Cell
+} from 'recharts';
 
 export function Dashboard() {
   const { isAdmin } = useAuth();
   const [stats, setStats] = useState({
     totalSales: 0,
     clientsCount: 0,
-    productsCount: 0
+    productsCount: 0,
+    chartData: []
   });
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    // Definimos a função de busca DENTRO do useEffect para evitar erros de referência
     const fetchDashboardData = async () => {
       try {
         setLoading(true);
 
-        // 1. Busca contagem de clientes
-        const { count: clients } = await supabase
-          .from('clients')
-          .select('*', { count: 'exact', head: true });
+        // 1. Contagens básicas
+        const { count: clients } = await supabase.from('clients').select('*', { count: 'exact', head: true });
+        const { count: products } = await supabase.from('products').select('*', { count: 'exact', head: true });
         
-        // 2. Busca contagem de produtos
-        const { count: products } = await supabase
-          .from('products')
-          .select('*', { count: 'exact', head: true });
-
-        // 3. Busca faturamento (Soma das vendas)
+        // 2. Dados de Vendas para o Gráfico
         const { data: sales } = await supabase
           .from('sales')
-          .select('total_amount');
+          .select('total_amount, created_at')
+          .order('created_at', { ascending: true });
 
+        // Processar faturamento total
         const total = sales?.reduce((acc, sale) => acc + Number(sale.total_amount), 0) || 0;
+
+        // Agrupar vendas por data para o gráfico
+        const chartMap = sales?.reduce((acc, sale) => {
+          const date = new Date(sale.created_at).toLocaleDateString('pt-BR', { day: '2-digit', month: '2-digit' });
+          acc[date] = (acc[date] || 0) + Number(sale.total_amount);
+          return acc;
+        }, {});
+
+        const chartData = Object.keys(chartMap || {}).map(date => ({
+          date,
+          valor: chartMap[date]
+        })).slice(-7); // Mostrar os últimos 7 dias com vendas
 
         setStats({
           totalSales: total,
           clientsCount: clients || 0,
-          productsCount: products || 0
+          productsCount: products || 0,
+          chartData
         });
       } catch (error) {
-        console.error("Erro ao carregar dashboard:", error.message);
+        console.error("Erro no Dashboard:", error);
       } finally {
         setLoading(false);
       }
     };
 
     fetchDashboardData();
-  }, []); // Array vazio significa que executa apenas uma vez ao carregar a página
+  }, []);
 
-  if (loading) {
-    return <div className="p-8 text-center text-gray-500 font-medium">Carregando indicadores...</div>;
-  }
+  const COLORS = ['#3b82f6', '#8b5cf6', '#10b981', '#f59e0b'];
+
+  if (loading) return <div className="p-8 text-center animate-pulse text-gray-500">Carregando inteligência de dados...</div>;
 
   return (
-    <div className="p-8">
-      <h1 className="text-3xl font-bold mb-8 text-gray-800 flex items-center gap-2">
-        <LayoutDashboard className="text-blue-600" /> Dashboard
-      </h1>
-
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Card de Faturamento - Lógica de visibilidade Admin */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-green-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 uppercase font-bold">Total em Vendas</p>
-              <h2 className="text-2xl font-bold text-gray-800">
-                {isAdmin ? `R$ ${stats.totalSales.toFixed(2)}` : "R$ ********"}
-              </h2>
-              {!isAdmin && <p className="text-xs text-red-400 mt-1 italic">Acesso restrito ao Admin</p>}
-            </div>
-            <DollarSign className="text-green-500" size={32} />
-          </div>
-        </div>
-
-        {/* Card de Clientes */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-blue-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 uppercase font-bold">Clientes Ativos</p>
-              <h2 className="text-2xl font-bold text-gray-800">{stats.clientsCount}</h2>
-            </div>
-            <Users className="text-blue-500" size={32} />
-          </div>
-        </div>
-
-        {/* Card de Produtos */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border-l-4 border-purple-500">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-sm text-gray-500 uppercase font-bold">Itens no Catálogo</p>
-              <h2 className="text-2xl font-bold text-gray-800">{stats.productsCount}</h2>
-            </div>
-            <Package className="text-purple-500" size={32} />
-          </div>
-        </div>
+    <div className="p-8 bg-gray-50 min-h-screen">
+      <div className="flex items-center justify-between mb-8">
+        <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-3">
+          <LayoutDashboard className="text-blue-600" size={32} /> Resumo Executivo
+        </h1>
+        <span className="text-sm bg-blue-100 text-blue-700 px-3 py-1 rounded-full font-medium">
+          Atualizado agora
+        </span>
       </div>
 
-      {isAdmin && (
-        <div className="mt-12 bg-blue-50 p-6 rounded-xl border border-blue-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-blue-800 font-bold">Área do Administrador</h3>
-            <p className="text-blue-600 text-sm">Você tem acesso aos relatórios financeiros detalhados.</p>
-          </div>
-          <button className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm font-bold hover:bg-blue-700 transition">
-            Exportar Dados
-          </button>
+      {/* Cards de Indicadores */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <StatCard 
+          label="Faturamento Total" 
+          value={isAdmin ? `R$ ${stats.totalSales.toFixed(2)}` : "R$ *****"}
+          icon={<DollarSign className="text-green-600" />}
+          color="border-green-500"
+        />
+        <StatCard 
+          label="Carteira de Clientes" 
+          value={stats.clientsCount}
+          icon={<Users className="text-blue-600" />}
+          color="border-blue-500"
+        />
+        <StatCard 
+          label="Produtos Ativos" 
+          value={stats.productsCount}
+          icon={<Package className="text-purple-600" />}
+          color="border-purple-500"
+        />
+      </div>
+
+      {/* Área do Gráfico */}
+      <div className="bg-white p-6 rounded-2xl shadow-sm border">
+        <div className="flex items-center gap-2 mb-6">
+          <TrendingUp className="text-gray-400" size={20} />
+          <h2 className="text-lg font-bold text-gray-700">Desempenho de Vendas (Últimos Dias)</h2>
         </div>
-      )}
+        
+        <div className="h-80 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={stats.chartData}>
+              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f0f0f0" />
+              <XAxis dataKey="date" axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} dy={10} />
+              <YAxis axisLine={false} tickLine={false} tick={{fill: '#9ca3af', fontSize: 12}} />
+              <Tooltip 
+                cursor={{fill: '#f8fafc'}}
+                contentStyle={{borderRadius: '12px', border: 'none', boxShadow: '0 4px 12px rgba(0,0,0,0.1)'}}
+              />
+              <Bar dataKey="valor" radius={[4, 4, 0, 0]}>
+                {stats.chartData.map((entry, index) => (
+                  <Cell key={`cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                ))}
+              </Bar>
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// Sub-componente para os Cards
+function StatCard({ label, value, icon, color }) {
+  return (
+    <div className={`bg-white p-6 rounded-2xl shadow-sm border-l-4 ${color} hover:shadow-md transition-shadow`}>
+      <div className="flex justify-between items-start">
+        <div>
+          <p className="text-sm font-semibold text-gray-400 uppercase tracking-wider">{label}</p>
+          <h3 className="text-2xl font-black text-gray-800 mt-1">{value}</h3>
+        </div>
+        <div className="p-3 bg-gray-50 rounded-lg">{icon}</div>
+      </div>
     </div>
   );
 }
